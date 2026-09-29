@@ -1,102 +1,91 @@
-import 'dart:async';
-
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
-
 final FirebaseAuth _auth = FirebaseAuth.instance;
-final FirebaseFirestore _firestore = FirebaseFirestore.instance;
-final GoogleSignIn googleSignIn = GoogleSignIn.instance;
+final GoogleSignIn _googleSignIn = GoogleSignIn.instance;
 
-Future<UserCredential?> customersignUp({
+// Web Client ID from app-forge-339be google-services.json
+const String _webClientId =
+    '84122045736-l2it1o2gj75j8145c0jru0icq7hurn91.apps.googleusercontent.com';
+
+Future<UserCredential?> customerSignUp({
   required String name,
   required String email,
   required String password,
   required String phone,
 }) async {
   try {
-    UserCredential userCredential =
-        await _auth.createUserWithEmailAndPassword(
-      email: email.trim(),
-      password: password.trim(),
-    );
+    final UserCredential userCredential = await _auth
+        .createUserWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
 
-    String uid = userCredential.user!.uid;
-
-    await _firestore.collection('users').doc(uid).set({
-      'uid': uid,
-      'name': name.trim(),
-      'email': email.trim(),
-      'phone': phone.trim(),
-      'role': 'customer',
-      'createdAt': FieldValue.serverTimestamp(),
-    });
-
-    print('Account created Successfully');
-    print('UID: $uid');
+    // Save display name directly in Firebase Auth
+    await userCredential.user?.updateDisplayName(name.trim());
 
     return userCredential;
   } on FirebaseAuthException catch (e) {
-    print('Firebase Authentication Error');
-    print('Code: ${e.code}');
-    print('Sign Up Error: $e');
-    return null;
+    throw e.message ?? 'Firebase Authentication Error: ${e.code}';
   } catch (e) {
-    print('Sign Up Error: $e');
-    return null;
+    throw 'Sign Up Error: $e';
   }
 }
+
 Future<UserCredential?> customerLogin({
   required String email,
   required String password,
-})async {
+}) async {
   try {
-    UserCredential userCredential=await _auth.signInWithEmailAndPassword(email:email.trim(),password:password.trim());
-    print('Login Succesfully');
-    print('UID : ${userCredential.user?.uid}');
-    return userCredential;
-  } on FirebaseAuthException catch (e) {
-    print('Firebase Login Error');
-    print('Code :${e.code}');
-    print('Message: ${e.message}');
-    return null;
-  }catch (e){
-    print('Login Error : $e');
-    return null;
-  }
-}
-Future<void> customerlogout() async {
-  await _auth.signOut();
-}
-
-
-Future<UserCredential?> customersignUpWithGoogle() async {
-  try {
-    final GoogleAuthProvider googleProvider = GoogleAuthProvider();
-
-    googleProvider.addScope(
-      'https://www.googleapis.com/auth/userinfo.email',
-    );
-
-    googleProvider.addScope(
-      'https://www.googleapis.com/auth/userinfo.profile',
-    );
-
-    final UserCredential userCredential =
-        await _auth.signInWithPopup(googleProvider);
-
-    print('Google Sign-In successful!');
-    print('Email: ${userCredential.user?.email}');
+    final UserCredential userCredential = await _auth
+        .signInWithEmailAndPassword(
+          email: email.trim(),
+          password: password.trim(),
+        );
 
     return userCredential;
   } on FirebaseAuthException catch (e) {
-    print('Firebase Google Sign-In Error: ${e.code}');
-    print('Message: ${e.message}');
-    return null;
+    throw e.message ?? 'Firebase Login Error: ${e.code}';
   } catch (e) {
-    print('Google Sign-In Error: $e');
-    return null;
+    throw 'Login Error: $e';
   }
 }
 
+Future<void> customerLogout() async {
+  await _auth.signOut();
+  await _googleSignIn.signOut();
+}
+
+Future<UserCredential?> customerSignUpWithGoogle() async {
+  try {
+    await _googleSignIn.initialize(serverClientId: _webClientId);
+    await _googleSignIn.signOut();
+
+    final GoogleSignInAccount? googleUser = await _googleSignIn.authenticate();
+
+    if (googleUser == null) {
+      return null;
+    }
+
+    final GoogleSignInAuthentication googleAuth = googleUser.authentication;
+
+    final AuthCredential credential = GoogleAuthProvider.credential(
+      idToken: googleAuth.idToken,
+    );
+
+    final UserCredential userCredential = await _auth.signInWithCredential(
+      credential,
+    );
+
+    return userCredential;
+  } on FirebaseAuthException catch (e) {
+    throw e.message ?? 'Firebase Google Sign-In Error: ${e.code}';
+  } on GoogleSignInException catch (e) {
+    if (e.code == GoogleSignInExceptionCode.canceled) {
+      return null;
+    }
+    throw 'Google Sign-In Error [${e.code}]: ${e.description}';
+  } catch (e) {
+    throw 'Google Sign-In Error: $e';
+  }
+}

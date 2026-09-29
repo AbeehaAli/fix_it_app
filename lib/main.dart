@@ -1,7 +1,6 @@
 import 'package:firebase_core/firebase_core.dart';
 import 'package:final_project/core/routes/app_router.dart';
 import 'package:final_project/core/theme/app_theme.dart';
-import 'package:final_project/features/splash/presentation/pages/splash_screen.dart';
 import 'package:final_project/firebase_options.dart';
 import 'package:flutter/material.dart';
 

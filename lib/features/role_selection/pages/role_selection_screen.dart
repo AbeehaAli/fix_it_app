@@ -76,6 +76,7 @@ class _RoleSelectionScreenState extends State<RoleSelectionScreen> {
                     setState(() {
                       selectedRole = 'technician';
                     });
+                    context.push('/technician_signUp');
                   },
                 ),
               ),
