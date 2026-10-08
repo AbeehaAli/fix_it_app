@@ -1,11 +1,13 @@
+import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:final_project/features/customer/presentation/pages/customer_jobs_screen.dart';
 import 'package:final_project/features/customer/presentation/pages/customer_msgs_screen.dart';
 import 'package:final_project/features/customer/presentation/pages/customer_profile_screen.dart';
 import 'package:final_project/features/customer/presentation/pages/technician_list_screen.dart';
 import 'package:final_project/features/customer/presentation/widget/customer_bottom_nav_bar.dart';
+import 'package:final_project/features/firebase/data/services/technician_profile_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 class CustomerHome extends StatefulWidget {
@@ -40,7 +42,7 @@ class _CustomerHomeState extends State<CustomerHome> {
       return 'Customer';
     }
 
-   return name;
+    return name;
   }
 
   @override
@@ -75,7 +77,6 @@ class _CustomerHomeState extends State<CustomerHome> {
 
     final horizontalPadding = screenWidth * 0.05;
     final topPadding = screenHeight * 0.055;
-
     final greetingFontSize = screenWidth * 0.064;
     final subtitleFontSize = screenWidth * 0.038;
     final sectionTitleSize = screenWidth * 0.047;
@@ -259,7 +260,7 @@ class _CustomerHomeState extends State<CustomerHome> {
               children: [
                 Expanded(
                   child: Text(
-                    'Recommended Technicians',
+                    'Available Technicians',
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
@@ -273,7 +274,17 @@ class _CustomerHomeState extends State<CustomerHome> {
                   width: screenWidth * 0.02,
                 ),
                 TextButton(
-                  onPressed: () {},
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) =>
+                            const TechnicianListScreen(
+                          serviceName: 'Technicians',
+                        ),
+                      ),
+                    );
+                  },
                   style: TextButton.styleFrom(
                     padding: EdgeInsets.zero,
                     minimumSize: Size.zero,
@@ -297,71 +308,73 @@ class _CustomerHomeState extends State<CustomerHome> {
             ),
 
             // ==================================================
-            // EMPTY TECHNICIANS
+            // AVAILABLE TECHNICIANS FROM FIRESTORE
             // ==================================================
 
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.symmetric(
-                vertical: screenHeight * 0.035,
-                horizontal: screenWidth * 0.05,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(18),
-                border: Border.all(
-                  color: const Color(0xFFE5EAF0),
-                ),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.08),
-                    blurRadius: 12,
-                    spreadRadius: 1,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
-              ),
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Container(
-                    width: screenWidth * 0.16,
-                    height: screenWidth * 0.16,
-                    decoration: const BoxDecoration(
-                      color: Color(0xFFEAF7F1),
-                      shape: BoxShape.circle,
+            StreamBuilder<
+                QuerySnapshot<Map<String, dynamic>>>(
+              stream:
+                  TechnicianProfileService
+                      .availableTechnicianStream(),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState ==
+                    ConnectionState.waiting) {
+                  return Container(
+                    width: double.infinity,
+                    height: 190,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius:
+                          BorderRadius.circular(18),
+                      border: Border.all(
+                        color: const Color(0xFFE5EAF0),
+                      ),
                     ),
-                    child: Icon(
-                      Icons.engineering_outlined,
-                      size: screenWidth * 0.11,
-                      color: Colors.grey,
+                    child: const Center(
+                      child: CircularProgressIndicator(
+                        color: Color(0xFF12A66A),
+                      ),
                     ),
+                  );
+                }
+
+                if (snapshot.hasError) {
+                  return _buildTechnicianErrorState(
+                    screenWidth,
+                    screenHeight,
+                  );
+                }
+
+                final technicians =
+                    snapshot.data?.docs ?? [];
+
+                if (technicians.isEmpty) {
+                  return _buildEmptyTechnicianState(
+                    screenWidth,
+                    screenHeight,
+                  );
+                }
+
+                return SizedBox(
+                  height: 205,
+                  child: ListView.builder(
+                    scrollDirection: Axis.horizontal,
+                    itemCount: technicians.length,
+                    itemBuilder: (context, index) {
+                      final document =
+                          technicians[index];
+
+                      final data = document.data();
+
+                      return _buildTechnicianCard(
+                        data,
+                        screenWidth,
+                        screenHeight,
+                      );
+                    },
                   ),
-                  SizedBox(
-                    height: screenHeight * 0.012,
-                  ),
-                  Text(
-                    'No technicians available yet',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: screenWidth * 0.038,
-                      fontWeight: FontWeight.w600,
-                      color: const Color(0xFF172033),
-                    ),
-                  ),
-                  SizedBox(
-                    height: screenHeight * 0.006,
-                  ),
-                  Text(
-                    'Recommended technicians will appear here.',
-                    textAlign: TextAlign.center,
-                    style: TextStyle(
-                      fontSize: screenWidth * 0.032,
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
+                );
+              },
             ),
 
             SizedBox(
@@ -369,6 +382,379 @@ class _CustomerHomeState extends State<CustomerHome> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // TECHNICIAN CARD
+  // ==========================================================
+
+  Widget _buildTechnicianCard(
+    Map<String, dynamic> data,
+    double screenWidth,
+    double screenHeight,
+  ) {
+    final name =
+        data['name']?.toString().trim().isNotEmpty == true
+            ? data['name'].toString().trim()
+            : 'Technician';
+
+    final profession =
+        data['profession']?.toString().trim().isNotEmpty == true
+            ? data['profession'].toString().trim()
+            : 'Technician';
+
+    final ratingValue = data['rating'];
+
+    double rating = 0;
+
+    if (ratingValue is num) {
+      rating = ratingValue.toDouble();
+    }
+
+    final imageBase64 =
+        data['profileImageBase64']?.toString() ?? '';
+
+    final imageUrl =
+        data['profileImageUrl']?.toString() ?? '';
+
+    return Container(
+      width: screenWidth * 0.72,
+      margin: EdgeInsets.only(
+        right: screenWidth * 0.035,
+      ),
+      padding: EdgeInsets.all(
+        screenWidth * 0.035,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFE5EAF0),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.06),
+            blurRadius: 10,
+            spreadRadius: 1,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          // ====================================================
+          // PROFILE IMAGE
+          // ====================================================
+
+          ClipRRect(
+            borderRadius: BorderRadius.circular(14),
+            child: _buildTechnicianImage(
+              imageBase64,
+              imageUrl,
+              screenWidth,
+            ),
+          ),
+
+          SizedBox(
+            width: screenWidth * 0.035,
+          ),
+
+          // ====================================================
+          // TECHNICIAN INFORMATION
+          // ====================================================
+
+          Expanded(
+            child: Column(
+              crossAxisAlignment:
+                  CrossAxisAlignment.start,
+              mainAxisAlignment:
+                  MainAxisAlignment.center,
+              children: [
+                Text(
+                  name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: screenWidth * 0.041,
+                    fontWeight: FontWeight.bold,
+                    color: const Color(0xFF172033),
+                  ),
+                ),
+
+                SizedBox(
+                  height: screenHeight * 0.006,
+                ),
+
+                Text(
+                  profession,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    fontSize: screenWidth * 0.033,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+
+                SizedBox(
+                  height: screenHeight * 0.009,
+                ),
+
+                Row(
+                  children: [
+                    Icon(
+                      Icons.star_rounded,
+                      size: screenWidth * 0.045,
+                      color: const Color(0xFFFFA000),
+                    ),
+
+                    SizedBox(
+                      width: screenWidth * 0.01,
+                    ),
+
+                    Text(
+                      rating.toStringAsFixed(1),
+                      style: TextStyle(
+                        fontSize: screenWidth * 0.032,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF172033),
+                      ),
+                    ),
+                  ],
+                ),
+
+                SizedBox(
+                  height: screenHeight * 0.009,
+                ),
+
+                Row(
+                  children: [
+                    Container(
+                      width: 8,
+                      height: 8,
+                      decoration: const BoxDecoration(
+                        color: Color(0xFF12A66A),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+
+                    SizedBox(
+                      width: screenWidth * 0.012,
+                    ),
+
+                    Text(
+                      'Available',
+                      style: TextStyle(
+                        fontSize: screenWidth * 0.031,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFF12A66A),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // TECHNICIAN IMAGE
+  // ==========================================================
+
+  Widget _buildTechnicianImage(
+    String imageBase64,
+    String imageUrl,
+    double screenWidth,
+  ) {
+    final imageSize = screenWidth * 0.20;
+
+    if (imageBase64.isNotEmpty) {
+      try {
+        return Image.memory(
+          base64Decode(imageBase64),
+          width: imageSize,
+          height: imageSize,
+          fit: BoxFit.cover,
+          errorBuilder:
+              (context, error, stackTrace) {
+            return _defaultTechnicianImage(
+              imageSize,
+            );
+          },
+        );
+      } catch (e) {
+        return _defaultTechnicianImage(
+          imageSize,
+        );
+      }
+    }
+
+    if (imageUrl.isNotEmpty) {
+      return Image.network(
+        imageUrl,
+        width: imageSize,
+        height: imageSize,
+        fit: BoxFit.cover,
+        errorBuilder:
+            (context, error, stackTrace) {
+          return _defaultTechnicianImage(
+            imageSize,
+          );
+        },
+      );
+    }
+
+    return _defaultTechnicianImage(
+      imageSize,
+    );
+  }
+
+  Widget _defaultTechnicianImage(
+    double size,
+  ) {
+    return Container(
+      width: size,
+      height: size,
+      color: const Color(0xFFEAF7F1),
+      child: Icon(
+        Icons.person,
+        size: size * 0.50,
+        color: const Color(0xFF12A66A),
+      ),
+    );
+  }
+
+  // ==========================================================
+  // EMPTY STATE
+  // ==========================================================
+
+  Widget _buildEmptyTechnicianState(
+    double screenWidth,
+    double screenHeight,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        vertical: screenHeight * 0.035,
+        horizontal: screenWidth * 0.05,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFE5EAF0),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.08),
+            blurRadius: 12,
+            spreadRadius: 1,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Column(
+        children: [
+          Container(
+            width: screenWidth * 0.16,
+            height: screenWidth * 0.16,
+            decoration: const BoxDecoration(
+              color: Color(0xFFEAF7F1),
+              shape: BoxShape.circle,
+            ),
+            child: Icon(
+              Icons.engineering_outlined,
+              size: screenWidth * 0.11,
+              color: Colors.grey,
+            ),
+          ),
+
+          SizedBox(
+            height: screenHeight * 0.012,
+          ),
+
+          Text(
+            'No technicians available yet',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: screenWidth * 0.038,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF172033),
+            ),
+          ),
+
+          SizedBox(
+            height: screenHeight * 0.006,
+          ),
+
+          Text(
+            'Technicians who are currently available will appear here.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: screenWidth * 0.032,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ==========================================================
+  // ERROR STATE
+  // ==========================================================
+
+  Widget _buildTechnicianErrorState(
+    double screenWidth,
+    double screenHeight,
+  ) {
+    return Container(
+      width: double.infinity,
+      padding: EdgeInsets.symmetric(
+        vertical: screenHeight * 0.035,
+        horizontal: screenWidth * 0.05,
+      ),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(
+          color: const Color(0xFFE5EAF0),
+        ),
+      ),
+      child: Column(
+        children: [
+          Icon(
+            Icons.error_outline,
+            size: screenWidth * 0.12,
+            color: Colors.grey,
+          ),
+          SizedBox(
+            height: screenHeight * 0.012,
+          ),
+          Text(
+            'Unable to load technicians',
+            style: TextStyle(
+              fontSize: screenWidth * 0.038,
+              fontWeight: FontWeight.w600,
+              color: const Color(0xFF172033),
+            ),
+          ),
+          SizedBox(
+            height: screenHeight * 0.006,
+          ),
+          Text(
+            'Please check your connection and try again.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: screenWidth * 0.032,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -394,10 +780,14 @@ class ServiceItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final screenWidth = MediaQuery.of(context).size.width;
-    final screenHeight = MediaQuery.of(context).size.height;
+    final screenWidth =
+        MediaQuery.of(context).size.width;
 
-    final iconContainerSize = screenWidth * 0.16;
+    final screenHeight =
+        MediaQuery.of(context).size.height;
+
+    final iconContainerSize =
+        screenWidth * 0.16;
 
     return GestureDetector(
       onTap: () {
@@ -419,7 +809,8 @@ class ServiceItem extends StatelessWidget {
             height: iconContainerSize,
             decoration: BoxDecoration(
               color: backgroundColor,
-              borderRadius: BorderRadius.circular(
+              borderRadius:
+                  BorderRadius.circular(
                 screenWidth * 0.045,
               ),
             ),
@@ -429,9 +820,11 @@ class ServiceItem extends StatelessWidget {
               color: iconColor,
             ),
           ),
+
           SizedBox(
             height: screenHeight * 0.009,
           ),
+
           Text(
             title,
             textAlign: TextAlign.center,

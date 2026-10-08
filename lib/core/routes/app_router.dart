@@ -74,10 +74,7 @@ class AppRouter {
         builder: (context, state) => const TechnicianJobsScreen()
         ),
       
-       GoRoute(
-        path: '/technician_job_request_detail_screen',
-        builder: (context, state) => const TechnicianJobRequestDetailsScreen(),
-        ),
+       
       
        GoRoute(
         path: '/technician_job__in_progress_screen',

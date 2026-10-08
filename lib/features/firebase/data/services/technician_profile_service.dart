@@ -304,4 +304,13 @@ class TechnicianProfileService {
         .doc(uid)
         .snapshots();
   }
+
+   static Stream<
+      QuerySnapshot<Map<String, dynamic>>>
+      availableTechnicianStream(){
+        return _techniciansCollection
+        .where('availability',
+        isEqualTo: true)
+        .snapshots();
+      }
 }
